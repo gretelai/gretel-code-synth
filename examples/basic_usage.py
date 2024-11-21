@@ -20,8 +20,8 @@ def main():
         synth.process_repository(
             repo_url="https://github.com/gretelai/gretel-blueprints.git",
             days=30,
-            max_batch_size=3,
-            min_batch_size=1,
+            max_batch_size=5,
+            min_batch_size=2,
         )
 
         # Configure and generate dataset
@@ -31,6 +31,9 @@ def main():
         logger.info("Generating preview...")
         preview = synth.designer.generate_dataset_preview()
         preview.display_sample_record()
+
+        output_path = Path("generated_preview.jsonl")
+        preview.dataset.to_json(output_path, orient="records", lines=True)
 
         # Generate full dataset
         # logger.info("\nGenerating full dataset...")

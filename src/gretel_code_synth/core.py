@@ -1,5 +1,7 @@
+import json
 import logging
 import shutil
+import sys
 import tempfile
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -10,6 +12,9 @@ import git
 import nbformat
 from gretel_client.navigator import DataDesigner
 from gretel_client.navigator.tasks.types import CategoricalDataSeeds
+from rich.console import Console
+from rich.syntax import Syntax
+from rich.table import Table
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,6 +50,8 @@ class CodeSynth:
         self.designer = DataDesigner(
             api_key=gretel_api_key, endpoint=endpoint, cache=cache
         )
+
+        self.preview = None
 
         # Default seed structure optimized for library usage examples
         self.default_seeds = {
@@ -126,265 +133,6 @@ class CodeSynth:
                     "weights": [0.3, 0.3, 0.2, 0.1, 0.1],
                 },
             ]
-        }
-
-        # Default prompts aligned with library usage patterns
-        self.default_prompts = {
-            "question": """
-            Create a practical developer question about using a library for {pattern_type} in a {context_scope} context.
-            The example should be at {complexity_level} level and demonstrate {aspects}.
-            
-            Reference implementation:
-            ```python
-            {code_examples}
-            ```
-            
-            Focus on {use_case} scenarios.
-            
-            Requirements:
-            - Frame as a specific, actionable use case
-            - Include clear requirements and constraints
-            - Specify expected behavior and outputs
-            - Highlight integration points and dependencies
-            - Include relevant configuration or setup needs
-            """,
-            "code_solution": """
-            Write a solution for: {question}
-            
-            Requirements:
-            1. Follow {aspects} principles
-            2. Match {complexity_level} level expectations
-            3. Include imports and setup
-            4. Add comprehensive docstrings with:
-               - Purpose and context
-               - Parameters
-               - Return values
-               - Example usage
-               - Common pitfalls
-            5. Add type hints
-            6. Include error handling
-            7. Add logging where appropriate
-            8. Include example usage
-            
-            Reference implementation:
-            ```python
-            {code_examples}
-            ```
-            
-            Make it production-ready and well-documented.
-            """,
-            "explanation": """
-            Explain the solution for: {question}
-            
-            Focus on:
-            1. Overall approach and design choices
-            2. Library initialization and setup
-            3. Key integration points
-            4. Error handling strategy
-            5. Resource management
-            6. Performance considerations
-            7. Best practices demonstrated ({aspects})
-            8. Common pitfalls to avoid
-            9. Testing approaches
-            
-            Target this explanation for {complexity_level} level developers.
-            Include both "why" and "how" explanations.
-            """,
-        }
-
-
-import logging
-import shutil
-import tempfile
-from collections import defaultdict
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, List, Optional, Union
-
-import git
-import nbformat
-from gretel_client.navigator import DataDesigner
-from gretel_client.navigator.tasks.types import CategoricalDataSeeds
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-class CodeSynth:
-    """
-    Transform GitHub repository notebooks into synthetic code examples for training language models.
-    Uses Gretel's Data Designer to generate high-quality, diverse coding examples that demonstrate
-    library usage patterns, best practices, and common pitfalls.
-    """
-
-    def __init__(
-        self,
-        gretel_api_key: str,
-        endpoint: str = "https://api.gretel.cloud",
-        cache: str = "yes",
-    ):
-        """
-        Initialize CodeSynth with Gretel credentials.
-
-        Args:
-            gretel_api_key: Your Gretel AI API key
-            endpoint: Gretel API endpoint URL
-            cache: Whether to cache results ("yes" or "no")
-        """
-        # Store credentials
-        self.api_key = gretel_api_key
-        self.endpoint = endpoint
-        self.cache = cache
-
-        # Initialize designer
-        self.designer = DataDesigner(
-            api_key=gretel_api_key, endpoint=endpoint, cache=cache
-        )
-
-        # Default seed structure optimized for library usage examples
-        self.default_seeds = {
-            "seed_categories": [
-                {
-                    "name": "pattern_type",
-                    "values": [
-                        "initialization",
-                        "basic_usage",
-                        "advanced_usage",
-                        "error_handling",
-                        "optimization",
-                        "integration",
-                        "custom_extensions",
-                        "testing",
-                    ],
-                    "weights": [0.15, 0.25, 0.15, 0.15, 0.1, 0.1, 0.05, 0.05],
-                },
-                {
-                    "name": "complexity_level",
-                    "values": ["beginner", "intermediate", "advanced"],
-                    "weights": [0.4, 0.4, 0.2],
-                },
-                {
-                    "name": "code_quality",
-                    "values": ["exemplar", "anti_pattern"],
-                    "weights": [0.9, 0.1],
-                    "subcategories": [
-                        {
-                            "name": "aspects",
-                            "values": {
-                                "exemplar": [
-                                    "clear_initialization",
-                                    "proper_error_handling",
-                                    "efficient_resource_usage",
-                                    "clear_documentation",
-                                    "type_safety",
-                                    "idiomatic_usage",
-                                    "extensible_design",
-                                    "comprehensive_testing",
-                                ],
-                                "anti_pattern": [
-                                    "resource_leaks",
-                                    "missing_error_handling",
-                                    "poor_initialization",
-                                    "type_unsafe",
-                                    "non_idiomatic",
-                                    "brittle_design",
-                                    "untested",
-                                    "undocumented",
-                                ],
-                            },
-                        }
-                    ],
-                },
-                {
-                    "name": "use_case",
-                    "values": [
-                        "data_processing",
-                        "api_integration",
-                        "configuration",
-                        "persistence",
-                        "monitoring",
-                        "validation",
-                        "transformation",
-                        "analysis",
-                    ],
-                    "weights": [0.2, 0.15, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1],
-                },
-                {
-                    "name": "context_scope",
-                    "values": [
-                        "standalone_script",
-                        "module_component",
-                        "service_integration",
-                        "notebook_environment",
-                        "cli_tool",
-                    ],
-                    "weights": [0.3, 0.3, 0.2, 0.1, 0.1],
-                },
-            ]
-        }
-
-        # Default prompts aligned with library usage patterns
-        self.default_prompts = {
-            "question": """
-            Create a practical developer question about using a library for {pattern_type} in a {context_scope} context.
-            The example should be at {complexity_level} level and demonstrate {aspects}.
-            
-            Reference implementation:
-            ```python
-            {code_examples}
-            ```
-            
-            Focus on {use_case} scenarios.
-            
-            Requirements:
-            - Frame as a specific, actionable use case
-            - Include clear requirements and constraints
-            - Specify expected behavior and outputs
-            - Highlight integration points and dependencies
-            - Include relevant configuration or setup needs
-            """,
-            "code_solution": """
-            Write a solution for: {question}
-            
-            Requirements:
-            1. Follow {aspects} principles
-            2. Match {complexity_level} level expectations
-            3. Include imports and setup
-            4. Add comprehensive docstrings with:
-               - Purpose and context
-               - Parameters
-               - Return values
-               - Example usage
-               - Common pitfalls
-            5. Add type hints
-            6. Include error handling
-            7. Add logging where appropriate
-            8. Include example usage
-            
-            Reference implementation:
-            ```python
-            {code_examples}
-            ```
-            
-            Make it production-ready and well-documented.
-            """,
-            "explanation": """
-            Explain the solution for: {question}
-            
-            Focus on:
-            1. Overall approach and design choices
-            2. Library initialization and setup
-            3. Key integration points
-            4. Error handling strategy
-            5. Resource management
-            6. Performance considerations
-            7. Best practices demonstrated ({aspects})
-            8. Common pitfalls to avoid
-            9. Testing approaches
-            
-            Target this explanation for {complexity_level} level developers.
-            Include both "why" and "how" explanations.
-            """,
         }
 
     def process_repository(
@@ -434,6 +182,8 @@ class CodeSynth:
             logger.info(
                 f"\nTotal examples extracted: {sum(len(examples) for examples in all_examples.values())}"
             )
+            with open("seed_examples.jsonl", "w") as f:
+                f.write(json.dumps(all_examples, indent=2))
 
             if not all_examples:
                 raise ValueError("No valid code examples found in repository")
@@ -441,10 +191,34 @@ class CodeSynth:
             # Store examples for later use
             self.code_examples = dict(all_examples)
 
+            # Preview 3 examples using Rich
+            self._preview_code_seeds(all_examples)
+
         except Exception as e:
             raise Exception(f"Failed to process repository: {e}")
         finally:
             shutil.rmtree(temp_dir)
+
+    def _preview_code_seeds(self, all_examples: Dict[str, List[str]]) -> None:
+        """Preview 3 extracted code seeds using Rich."""
+        console = Console()
+        table = Table(title="Code Seeds Preview")
+
+        table.add_column("Category", style="bold cyan", no_wrap=True)
+        table.add_column("Code Example", style="dim", overflow="fold")
+
+        preview_count = 0
+        for category, examples in all_examples.items():
+            for example in examples[:3]:  # Limit to 3 examples per category
+                syntax = Syntax(example, "python", theme="monokai", line_numbers=True)
+                table.add_row(category, syntax)
+                preview_count += 1
+                if preview_count >= 3:
+                    break
+            if preview_count >= 3:
+                break
+
+        console.print(table)
 
     def configure(
         self, seeds: Optional[dict] = None, prompts: Optional[dict] = None
@@ -473,62 +247,52 @@ class CodeSynth:
                     }
                 ]
             }
-            logger.info("\nIngesting code seeds:")
-            for cat, examples in self.code_examples.items():
-                logger.info(f"- {cat}: {len(examples)} examples")
+            logger.info("🌱 Ingesting code seeds into data design:")
             self.designer.ingest_categorical_data_seeds(
                 CategoricalDataSeeds(**code_seeds)
             )
 
             # 2. Ingest task seeds (default or provided)
-            task_seeds = (
-                seeds
-                if seeds is not None
-                else {
-                    "seed_categories": [
-                        {
-                            "name": "pattern_type",
-                            "values": [
-                                "initialization",
-                                "basic_usage",
-                                "advanced_usage",
-                                "error_handling",
-                                "optimization",
-                                "testing",
-                            ],
-                        },
-                        {
-                            "name": "complexity_level",
-                            "values": ["beginner", "intermediate", "advanced"],
-                            "weights": [0.4, 0.4, 0.2],
-                        },
-                        {
-                            "name": "code_quality",
-                            "values": ["exemplar", "anti_pattern"],
-                            "weights": [0.9, 0.1],
-                            "subcategories": [
-                                {
-                                    "name": "aspects",
-                                    "values": {
-                                        "exemplar": [
-                                            "proper_error_handling",
-                                            "clear_documentation",
-                                            "type_safety",
-                                            "idiomatic_usage",
-                                        ],
-                                        "anti_pattern": [
-                                            "missing_error_handling",
-                                            "poor_documentation",
-                                            "type_unsafe",
-                                            "non_idiomatic",
-                                        ],
-                                    },
-                                }
-                            ],
-                        },
-                    ]
-                }
-            )
+            task_seeds = {
+                "seed_categories": [
+                    {
+                        "name": "pattern_type",
+                        "values": [
+                            "initialization",  # Client setup, basic config
+                            "data_operations",  # Working with data/files
+                            "error_handling",  # Try/except patterns
+                            "resource_mgmt",  # Context managers, cleanup
+                            "optimization",  # Performance improvements
+                        ],
+                        "weights": [0.3, 0.2, 0.2, 0.15, 0.15],
+                    },
+                    {
+                        "name": "complexity_level",
+                        "values": ["beginner", "intermediate", "advanced"],
+                        "weights": [0.4, 0.4, 0.2],
+                    },
+                    {
+                        "name": "code_aspects",
+                        "values": [
+                            "proper_error_handling",  # Try/except with logging
+                            "clear_documentation",  # Docstrings and comments
+                            "resource_management",  # Clean setup/teardown
+                            "idiomatic_usage",  # Pythonic patterns
+                        ],
+                        "weights": [0.3, 0.3, 0.2, 0.2],
+                    },
+                    {
+                        "name": "context_scope",
+                        "values": [
+                            "standalone_script",  # Single file scripts
+                            "library_usage",  # Using as imported lib
+                            "service_component",  # Part of larger service
+                        ],
+                        "weights": [0.4, 0.4, 0.2],
+                    },
+                ]
+            }
+
             logger.info("\nIngesting task seeds:")
             for cat in task_seeds["seed_categories"]:
                 logger.info(f"- {cat['name']}: {len(cat['values'])} values")
@@ -537,52 +301,55 @@ class CodeSynth:
             )
 
             # 3. Configure prompts to use both code examples and task structure
-            generation_prompts = (
-                prompts
-                if prompts is not None
-                else {
-                    "question": """
-                Create a practical developer question about {pattern_type} at {complexity_level} level.
-                The implementation should demonstrate {aspects}.
+            self.generation_prompts = {
+                "question": """
+                Create a practical developer question about using {code_examples} in a {context_scope} context, specifically focusing on {pattern_type} patterns.
+                The example should be at {complexity_level} level and demonstrate {code_aspects}.
                 
-                Use this reference implementation:
-                ```python
-                {implementations}
-                ```
-                
-                Make it a specific, actionable question that tests understanding of the pattern.
-                """,
-                    "code_solution": """
-                Write a solution for: {question}
-                
-                Use this reference implementation:
+                Use this reference implementation as a base:
                 ```python
                 {implementations}
                 ```
                 
                 Requirements:
-                - Match {complexity_level} level expectations
-                - Follow {aspects} principles
-                - Include all necessary imports
-                - Add clear docstrings
-                - Include error handling
-                - Add example usage
+                - Frame as a specific use case that builds on the reference implementation
+                - Use the same library and API patterns shown
+                - Focus on practical scenarios similar to the example
+                - Maintain consistency with the library's patterns
+                - Specify configuration and setup relevant to this library
                 """,
-                    "explanation": """
-                Explain the solution for: {question}
+                "code_solution": """
+                Write a solution for: {question}
                 
-                Focus on:
-                1. Overall approach
-                2. Key implementation details
-                3. How it demonstrates {aspects}
-                4. Common pitfalls at {complexity_level} level
-                5. Usage examples
+                Base your solution on this reference implementation:
+                ```python
+                {implementations}
+                ```
+                
+                Requirements:
+                1. Use the same library and API patterns shown in the reference
+                2. Match {complexity_level} level expectations
+                3. Demonstrate {code_aspects}
+                4. Include necessary imports shown in the reference, including type hints
+                5. Add comprehensive docstrings following the library's style
+                6. Add type hints consistent with the library's types
+                7. Follow the library's error handling patterns
+                8. Add appropriate logging following library conventions
+                9. Include example usage similar to the reference
+                
+                Ensure the solution extends or builds upon the reference implementation's patterns.
                 """,
-                }
-            )
+                "explanation": """
+                Briefly explain how this solution builds on the reference implementation for a {complexity_level} developer:
+                1. How it uses the library's patterns
+                2. Key implementation details
+                3. Important library-specific practices
+                4. Things to watch out for when using this library
+                """,
+            }
 
             # Add columns
-            for column, prompt in generation_prompts.items():
+            for column, prompt in self.generation_prompts.items():
                 self.designer.add_generated_data_column(
                     name=column,
                     generation_prompt=prompt,
@@ -617,17 +384,8 @@ class CodeSynth:
 
             # Generate preview
             logger.info("Generating dataset preview...")
-            preview = self.designer.generate_dataset_preview()
-
-            # Log preview details
-            logger.info("Preview generated")
-            if preview and hasattr(preview, "records") and preview.records:
-                logger.info(f"Preview contains {len(preview.records)} records")
-                logger.info("Sample record:")
-                for key, value in preview.records[0].items():
-                    logger.info(f"{key}: {value}")
-            else:
-                logger.warning("No preview records generated")
+            self.preview = self.designer.generate_dataset_preview()
+            self.preview.display_sample_record()
 
         except Exception as e:
             logger.error(f"Preview generation failed: {str(e)}")
@@ -639,183 +397,63 @@ class CodeSynth:
         max_batch_size: int = 3,
         min_batch_size: int = 1,
     ) -> Dict[str, List[str]]:
-        """Extract code with smarter batching based on notebook structure."""
+        """Extract code with context, preserving imports and markdown structure."""
         categories = defaultdict(list)
-        current_batch = []
-        current_context = []
+
+        def collect_imports(notebook):
+            imports = []
+            for cell in notebook.cells:
+                if cell.cell_type == "code":
+                    imports.extend(
+                        line.strip()
+                        for line in cell.source.split("\n")
+                        if line.strip().startswith(("import ", "from "))
+                    )
+            return list(dict.fromkeys(imports))
+
+        def combine_batch(imports, markdown, code):
+            return "\n".join(imports + [""] + markdown + [""] + code).strip()
 
         try:
             with open(notebook_path, "r", encoding="utf-8") as f:
                 notebook = nbformat.read(f, as_version=4)
 
-            for cell in notebook.cells:
-                if cell.cell_type == "markdown":
-                    current_context.append(cell.source.strip())
-
-                elif cell.cell_type == "code":
-                    code = cell.source.strip()
-                    if not self._is_valid_code_cell(code):
-                        continue
-
-                    if len(current_batch) >= max_batch_size:
-                        # Process batch
-                        if len(current_batch) >= min_batch_size:
-                            code_blocks = [c for c, _ in current_batch]
-                            context = [
-                                "# " + l
-                                for ctx in (ctx for _, ctx in current_batch)
-                                for l in ctx
-                                if l.strip()
-                            ]
-
-                            full_code = "\n".join(code_blocks)
-                            category = self._categorize_code_block(full_code)
-
-                            full_block = "\n".join(context + [""] + code_blocks)
-                            categories[category].append(full_block)
-
-                        current_batch = []
-                        current_context = []
-
-                    current_batch.append((code, current_context))
-                    current_context = []
-
-            # Process final batch
-            if len(current_batch) >= min_batch_size:
-                code_blocks = [c for c, _ in current_batch]
-                context = [
-                    "# " + l
-                    for ctx in (ctx for _, ctx in current_batch)
-                    for l in ctx
-                    if l.strip()
-                ]
-
-                full_code = "\n".join(code_blocks)
-                category = self._categorize_code_block(full_code)
-
-                full_block = "\n".join(context + [""] + code_blocks)
-                categories[category].append(full_block)
-
-        except Exception as e:
-            logger.error(f"Error processing notebook {notebook_path}: {e}")
-
-        return dict(categories)
-
-    def _categorize_code_block(self, code: str) -> str:
-        """Determine category for a complete code block."""
-        if "import" in code:
-            return "initialization"
-        if "def " in code or "class " in code:
-            return "definitions"
-        if "try:" in code:
-            return "error_handling"
-        if any(viz in code for viz in ["plot", "fig", "ax", "plt"]):
-            return "visualization"
-        if any(pattern in code for pattern in ["train", "fit", "predict"]):
-            return "model_training"
-        return "basic_operations"
-
-    def _is_valid_code_cell(self, code: str) -> bool:
-        """Check if code cell should be included in batches."""
-        # Skip empty, short, or system command cells
-        if not code or len(code) < 10 or code.startswith("!") or code.startswith("%"):
-            return False
-
-        # Ensure there's actual code content, not just comments
-        code_lines = [
-            l for l in code.split("\n") if l.strip() and not l.strip().startswith("#")
-        ]
-        return len(code_lines) > 0
-
-    def preview(self) -> None:
-        """Generate and display a preview of the dataset."""
-        try:
-            logger.info("Starting preview generation...")
-
-            # Make sure we've configured the designer
-            if not hasattr(self.designer, "_prompts") or not self.designer._prompts:
-                logger.info("Designer not configured, running configure() first")
-                self.configure()
-
-            # Generate preview
-            logger.info("Generating dataset preview...")
-            preview = self.designer.generate_dataset_preview()
-
-            # Log preview details
-            logger.info("Preview generated")
-            if preview and hasattr(preview, "records") and preview.records:
-                logger.info(f"Preview contains {len(preview.records)} records")
-                logger.info("Sample record:")
-                for key, value in preview.records[0].items():
-                    logger.info(f"{key}: {value}")
-            else:
-                logger.warning("No preview records generated")
-
-        except Exception as e:
-            logger.error(f"Preview generation failed: {str(e)}")
-            raise Exception(f"Failed to generate preview: {e}")
-
-    def _extract_notebook_content(
-        self,
-        notebook_path: Union[str, Path],
-        max_batch_size: int = 3,
-        min_batch_size: int = 1,
-    ) -> Dict[str, List[str]]:
-        """Extract code with smarter batching based on notebook structure."""
-        categories = defaultdict(list)
-        current_batch = []
-        current_context = []
-
-        try:
-            with open(notebook_path, "r", encoding="utf-8") as f:
-                notebook = nbformat.read(f, as_version=4)
+            imports = collect_imports(notebook)
+            markdown_buffer, current_code = [], []
 
             for cell in notebook.cells:
                 if cell.cell_type == "markdown":
-                    current_context.append(cell.source.strip())
+                    markdown_buffer.extend(
+                        line if line.lstrip().startswith("#") else f"# {line.strip()}"
+                        for line in cell.source.split("\n")
+                        if line.strip()
+                    )
 
                 elif cell.cell_type == "code":
                     code = cell.source.strip()
-                    if not self._is_valid_code_cell(code):
+                    if not code or code.startswith(("!", "%")):
                         continue
 
-                    if len(current_batch) >= max_batch_size:
-                        # Process batch
-                        if len(current_batch) >= min_batch_size:
-                            code_blocks = [c for c, _ in current_batch]
-                            context = [
-                                "# " + l
-                                for ctx in (ctx for _, ctx in current_batch)
-                                for l in ctx
-                                if l.strip()
-                            ]
+                    if all(
+                        line.strip().startswith(("import ", "from "))
+                        for line in code.split("\n")
+                        if line.strip()
+                    ):
+                        continue
 
-                            full_code = "\n".join(code_blocks)
-                            category = self._categorize_code_block(full_code)
+                    current_code.append(code)
 
-                            full_block = "\n".join(context + [""] + code_blocks)
-                            categories[category].append(full_block)
+                    if len(current_code) >= min_batch_size:
+                        full_block = combine_batch(
+                            imports, markdown_buffer, current_code
+                        )
+                        category = self._categorize_code_block(full_block)
+                        categories[category].append(full_block)
+                        current_code, markdown_buffer = [], []
 
-                        current_batch = []
-                        current_context = []
-
-                    current_batch.append((code, current_context))
-                    current_context = []
-
-            # Process final batch
-            if len(current_batch) >= min_batch_size:
-                code_blocks = [c for c, _ in current_batch]
-                context = [
-                    "# " + l
-                    for ctx in (ctx for _, ctx in current_batch)
-                    for l in ctx
-                    if l.strip()
-                ]
-
-                full_code = "\n".join(code_blocks)
-                category = self._categorize_code_block(full_code)
-
-                full_block = "\n".join(context + [""] + code_blocks)
+            if current_code:
+                full_block = combine_batch(imports, markdown_buffer, current_code)
+                category = self._categorize_code_block(full_block)
                 categories[category].append(full_block)
 
         except Exception as e:
